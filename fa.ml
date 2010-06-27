@@ -7,8 +7,9 @@ type state = (int*edge_list)
 type state_list = state array
 type internals = {mutable name : string ; mutable contents : state_list}
 
+
 let debug_out = ref stdout
-let do_debug = ref false
+let do_debug = ref true
 let debug fmt =
   	let k result = if !do_debug then begin
 				output_string !debug_out result ;
@@ -241,6 +242,17 @@ class amata : finite_automata =
 			!value
 end
 
+type population = finite_automata list
+
+let new_pop size state_size o_l o_v : population =
+	let pop = map (fun i -> new amata) (0--(size-1)) in
+	let init = map (fun i -> (i#random_build state_size o_l o_v) ; i) pop in
+	init
+
+let mutate_pop (pop : population) o_l o_v : population =
+	iter (fun i -> i#mutate o_l o_v) pop ;
+	pop
+
 let my = new amata 
 	
 let main =
@@ -248,5 +260,5 @@ let main =
 	my#set_states cool_list ;
 	my#random_build 20 [1;2;3] [1;2;3;] ;
 	let res = my#run [1;2;3] in
-	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--10000) ;
+	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--1000) ;
 
