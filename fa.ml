@@ -7,6 +7,15 @@ type state = (int*edge_list)
 type state_list = state array
 type internals = {mutable name : string ; mutable contents : state_list}
 
+let debug_out = ref stdout
+
+let debug fmt =
+  	let k result = begin
+				output_string !debug_out result ;
+    	flush stdout ;
+  	end in
+  	Printf.kprintf k fmt
+
 let (--) i j =
 	let rec aux n acc =
 		if n < i then acc else aux (n-1) (n :: acc)
@@ -24,6 +33,8 @@ class type finite_automata = object
 		method get_state : int -> state
 		(* Get edges for a given state *)
 		method get_edges : int -> edge_list
+		(* Get an edge given its number within a state*)
+		method get_edge : int -> int -> edge
 		(* Return all states *)
 		method show : state_list
 		(* Run automata on input *)
@@ -45,7 +56,7 @@ class type finite_automata = object
 		(* set the destination value for an edges *)
 		method set_edge_destination : int -> int -> int -> unit
 		(* Mutate seld *)
-		method mutate : unit
+		method mutate : int list -> int list -> unit
 		(* Build random fa *)
 		method random_build : int -> int list -> int list -> unit
 end
@@ -77,6 +88,9 @@ class amata : finite_automata =
 			states.contents <- lst 
 		method get_edges state =
 			let (s,es) = (self#get_state state) in es
+		method get_edge state edge =
+			let edges = self#get_edges state in
+			edges.(edge)
 		method num_states =
 			Array.length states.contents
 		method num_edges snum =
@@ -91,7 +105,8 @@ class amata : finite_automata =
 			try
 				old_edges.(enum) <- new_e ;
 			with
-				| Invalid_argument x -> printf "Attempting to change an edge out of bounds.\n" ;
+				| Invalid_argument x -> 
+					printf "Attempting to change an edge out of bounds.\n" ;
 		method set_edge_transition state edge value =
 			let old_edges = self#get_edges state in
 			let (t,d) = old_edges.(edge) in
@@ -108,12 +123,90 @@ class amata : finite_automata =
 			let total_states = Random.int mx_st in
 			let pos_states = 0 -- total_states in
 			states.contents <- (random_state_list total_states o_v o_l pos_states) ; 
-		method mutate =
+		method mutate o_l o_v =
 			let choice = Random.int 3 in
 			match choice with
-			| 0 -> ()
-			| 1 -> ()
-			| 2 -> ()
+			| 10 -> 
+				debug "Deleting state\n" ;
+				(* Delete state *)
+				let len = self#num_states in
+				let to_del_num = Random.int len in
+				let new_arr = Array.make (len-1) (0,[|(0,0)|]) in
+				let correc = ref 0 in
+				for i = 0 to (len-1) do 
+					if i = to_del_num then correc := -1 ;
+					new_arr.(i + !correc) <- self#get_state i ;
+				done ;
+				let final_arr = Array.map
+					(fun el ->
+						let (v,edges) = el in
+						let elist = Array.to_list edges in
+						let newl = filter (fun x -> let (t,d) = x in not (d = len-1)) 
+							elist in
+						(v,(Array.of_list newl))) new_arr in 
+				states.contents <- final_arr 
+			| 20 -> 
+					debug "Inserting state\n" ;
+					(* insert state *)
+					let len = self#num_states in
+					let new_s = random_state o_l o_v (0--(len+1)) in
+					let cpy = states.contents in
+					Array.iteri
+						(fun i el ->
+							let (v,edges) = el in
+							let add_transition = Random.int 2 in
+							match add_transition with
+							| 0 -> ()
+							| 1 -> 
+								let new_l = choose_random o_l in
+								let next_e = [|(new_l,len+1)|] in
+								let new_edge_list = Array.append edges next_e in
+								states.contents.(i) <- (v,new_edge_list) ;
+							| _ -> ()
+							) states.contents ;
+						states.contents <- Array.append cpy [|new_s|] ;
+			| x ->
+					(* change existing state *)
+					let len = self#num_states in
+					let to_change = Random.int len in
+					let what_doing = Random.int 5 in
+					debug  "Changing existing state(%d)\n" to_change ;
+					match what_doing with
+					| 0 -> 
+							(* Change a value *)
+							debug "Changing a value\n" ;
+							let new_v = choose_random o_v in
+							self#set_value to_change new_v 
+					| 1 -> 
+							(* Change a transition *)
+							debug "Changing a transition\n" ;
+							let new_t = choose_random o_l in
+							let what_edge = Random.int (self#num_edges to_change) in
+							debug "edge:%d,new:%d\n" what_edge new_t ;
+							self#set_edge_transition to_change what_edge new_t
+					| 2 ->
+							(* Change a destination *)
+							debug "Changing a destination:\n" ;
+							let new_d = Random.int len in
+							let what_edge = Random.int (self#num_edges to_change) in
+							debug  "edge:%d,destination:%d\n" what_edge new_d;
+							self#set_edge_destination to_change what_edge new_d 
+					| 3 ->
+							(* Add an edge *)
+							debug "Adding an edge\n" ; 
+							let (v,edges) = self#get_state to_change in
+							let new_t = choose_random o_l in
+							let new_d = Random.int len in
+							let new_edges = Array.append edges [|(new_t,new_d)|] in
+							states.contents.(to_change) <- (v,new_edges)
+					| 4 ->
+							(* Delete an edge *)
+							debug "Deleting an edge\n" ;
+							let (v,edges) = self#get_state to_change in
+							let what_edge = (self#get_edge to_change (Random.int (self#num_edges to_change))) in
+							let edge_list = Array.to_list edges in
+							let new_edges = Array.of_list (filter (fun x -> not (x = what_edge)) edge_list) in
+							states.contents.(to_change) <- (v,new_edges)
 			| _ -> ()
 		method run (input_lst : int list) =
 			let (ival,_) = self#get_state 0 in
