@@ -243,15 +243,30 @@ class amata : finite_automata =
 end
 
 type population = finite_automata list
+type evaluated_pop = (finite_automata*int) list
 
 let new_pop size state_size o_l o_v : population =
 	let pop = map (fun i -> new amata) (0--(size-1)) in
 	let init = map (fun i -> (i#random_build state_size o_l o_v) ; i) pop in
+	iter (fun p -> debug "size:%d\n" (p#num_states)) pop ;
 	init
 
 let mutate_pop (pop : population) o_l o_v : population =
 	iter (fun i -> i#mutate o_l o_v) pop ;
 	pop
+
+let eval_pop func pop : evaluated_pop =
+	let eval = map (fun p -> (p,(func p))) pop in
+	eval
+
+let tour_select (e_pop : evaluated_pop) num : population =
+	let lineup1 = map (fun x -> choose_random e_pop) (0--(num-1)) in
+	let lineup2 = map (fun x -> choose_random e_pop) (0--(num-1)) in
+	let winners = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then x_i else y_i) lineup1 lineup2 in
+	winners
+
+let test_eval indiv =
+	0
 
 let my = new amata 
 	
