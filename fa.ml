@@ -181,16 +181,23 @@ class amata : finite_automata =
 							(* Change a transition *)
 							debug "Changing a transition\n" ;
 							let new_t = choose_random o_l in
-							let what_edge = Random.int (self#num_edges to_change) in
-							debug "edge:%d,new:%d\n" what_edge new_t ;
-							self#set_edge_transition to_change what_edge new_t
-					| 2 ->
+							let edge_pos = self#num_edges to_change in
+							if edge_pos > 0 then
+								let what_edge = Random.int edge_pos in
+									debug "edge:%d,new:%d\n" what_edge new_t ;
+									self#set_edge_transition to_change what_edge new_t
+								else
+									self#mutate o_l o_v 
+					| 2 -> 
 							(* Change a destination *)
 							debug "Changing a destination:\n" ;
 							let new_d = Random.int len in
-							let what_edge = Random.int (self#num_edges to_change) in
-							debug  "edge:%d,destination:%d\n" what_edge new_d;
-							self#set_edge_destination to_change what_edge new_d 
+							let edge_pos = self#num_edges to_change in
+							if edge_pos > 0 then
+								let what_edge = Random.int edge_pos in
+									debug  "edge:%d,destination:%d\n" what_edge new_d;
+									self#set_edge_destination to_change what_edge new_d
+								else self#mutate o_l o_v  
 					| 3 ->
 							(* Add an edge *)
 							debug "Adding an edge\n" ; 
@@ -203,10 +210,14 @@ class amata : finite_automata =
 							(* Delete an edge *)
 							debug "Deleting an edge\n" ;
 							let (v,edges) = self#get_state to_change in
-							let what_edge = (self#get_edge to_change (Random.int (self#num_edges to_change))) in
-							let edge_list = Array.to_list edges in
-							let new_edges = Array.of_list (filter (fun x -> not (x = what_edge)) edge_list) in
-							states.contents.(to_change) <- (v,new_edges)
+							let edge_pos = self#num_edges to_change in
+							if edge_pos > 0 then
+								let what_edge = (self#get_edge to_change (Random.int edge_pos)) in
+								let edge_list = Array.to_list edges in
+								let new_edges = Array.of_list (filter (fun x -> not (x = what_edge)) edge_list) in
+									states.contents.(to_change) <- (v,new_edges)
+								else
+									self#mutate o_l o_v 
 			| _ -> ()
 		method run (input_lst : int list) =
 			let (ival,_) = self#get_state 0 in
@@ -234,4 +245,5 @@ let main =
 	my#set_states cool_list ;
 	my#random_build 20 [1;2;3] [1;2;3;] ;
 	my#run [1;2;3] ;
+	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--100) ;
 
