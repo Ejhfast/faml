@@ -8,9 +8,9 @@ type state_list = state array
 type internals = {mutable name : string ; mutable contents : state_list}
 
 let debug_out = ref stdout
-
+let do_debug = ref false
 let debug fmt =
-  	let k result = begin
+  	let k result = if !do_debug then begin
 				output_string !debug_out result ;
     	flush stdout ;
   	end in
@@ -126,26 +126,29 @@ class amata : finite_automata =
 		method mutate o_l o_v =
 			let choice = Random.int 3 in
 			match choice with
-			| 10 -> 
+			| 0 -> 
 				debug "Deleting state\n" ;
 				(* Delete state *)
 				let len = self#num_states in
-				let to_del_num = Random.int len in
-				let new_arr = Array.make (len-1) (0,[|(0,0)|]) in
-				let correc = ref 0 in
-				for i = 0 to (len-1) do 
-					if i = to_del_num then correc := -1 ;
-					new_arr.(i + !correc) <- self#get_state i ;
-				done ;
-				let final_arr = Array.map
-					(fun el ->
-						let (v,edges) = el in
-						let elist = Array.to_list edges in
-						let newl = filter (fun x -> let (t,d) = x in not (d = len-1)) 
-							elist in
-						(v,(Array.of_list newl))) new_arr in 
-				states.contents <- final_arr 
-			| 20 -> 
+				if not (len <= 1) then
+					let to_del_num = Random.int len in
+					let new_arr = Array.make (len-1) (0,[|(0,0)|]) in
+					let correc = ref 0 in
+					for i = 0 to (len-2) do (* Len-1 is last in old, so one less than that *)
+						if i = to_del_num then correc := 1 ;
+						new_arr.(i) <- self#get_state (i + !correc) ;
+					done ;
+					let final_arr = Array.map
+						(fun el ->
+							let (v,edges) = el in
+							let elist = Array.to_list edges in
+							let newl = filter (fun x -> let (t,d) = x in not (d = len-1)) 
+								elist in
+							(v,(Array.of_list newl))) new_arr in 
+					states.contents <- final_arr
+				else
+					self#mutate o_l o_v  
+			| 1 -> 
 					debug "Inserting state\n" ;
 					(* insert state *)
 					let len = self#num_states in
@@ -165,7 +168,7 @@ class amata : finite_automata =
 							| _ -> ()
 							) states.contents ;
 						states.contents <- Array.append cpy [|new_s|] ;
-			| x ->
+			| 2 ->
 					(* change existing state *)
 					let len = self#num_states in
 					let to_change = Random.int len in
@@ -217,8 +220,8 @@ class amata : finite_automata =
 								let new_edges = Array.of_list (filter (fun x -> not (x = what_edge)) edge_list) in
 									states.contents.(to_change) <- (v,new_edges)
 								else
-									self#mutate o_l o_v 
-			| _ -> ()
+									self#mutate o_l o_v
+					| _ -> ()
 		method run (input_lst : int list) =
 			let (ival,_) = self#get_state 0 in
 			let value = ref ival in
@@ -244,6 +247,6 @@ let main =
 	let cool_list = [|(1,[|(2,3);(3,4)|])|] in
 	my#set_states cool_list ;
 	my#random_build 20 [1;2;3] [1;2;3;] ;
-	my#run [1;2;3] ;
-	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--100) ;
+	let res = my#run [1;2;3] in
+	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--10000) ;
 
