@@ -36,6 +36,10 @@ class type finite_automata = object
 		method get_edges : int -> edge_list
 		(* Get an edge given its number within a state*)
 		method get_edge : int -> int -> edge
+		(* Get the index of an edge *)
+		method get_transition_index : int -> int -> int
+		(* Get the destination state of an edge *)
+		method get_transition_destination : int -> int -> int
 		(* Return all states *)
 		method show : state_list
 		(* Run automata on input *)
@@ -120,6 +124,22 @@ class amata : finite_automata =
 			(states.contents).(num)
 		method show =
 			states.contents
+		method get_transition_index state transition =
+			try
+				let elist = self#get_edges state in
+				let (place,(e,d)) = find (fun p -> let (id,(e,d)) = p in transition = e) 
+					(map2 (fun x id -> (id,x)) (Array.to_list elist) (0--((Array.length elist)-1))) in
+				place
+			with
+				| Not_found -> -1
+		method get_transition_destination state transition =
+			try
+				let elist = self#get_edges state in
+				let (place,(e,d)) = find (fun p -> let (id,(e,d)) = p in transition = e) 
+					(map2 (fun x id -> (id,x)) (Array.to_list elist) (0--((Array.length elist)-1))) in
+				d
+			with 
+				| Not_found -> state
 		method random_build mx_st o_l o_v =
 			let total_states = Random.int mx_st in
 			let pos_states = 0 -- total_states in
@@ -227,27 +247,32 @@ class amata : finite_automata =
 			let (ival,_) = self#get_state 0 in
 			let value = ref ival in
 			let state = ref 0 in
-			let parse_input i = 
+			let rec parse_input i =
 				(match (self#get_state !state) with
-				| (new_val, elist) -> 
-					try
-						let (e,d) = find (fun p -> let (e,d) = p in i = e) 
-							(Array.to_list elist) in
-						value := new_val ;
-						state := d ; ()
-					with
-						| Not_found -> () 
-						| _ -> printf "Should be impossible?\n" ; () ) in
+				| (o_val, _) ->
+						value := o_val ; 
+						let newstate = self#get_transition_destination !state i in
+						try 
+								let (v,_) = self#get_state newstate in 
+								state := newstate ; 
+								value := v ;
+								()
+						with (* change destination if it doesn't exist *)
+							| Invalid_argument x -> 
+								let place = self#get_transition_index !state i in
+								(self#set_edge_destination !state place (Random.int (self#num_states))) ; 
+								parse_input i ; ) in
 			iter parse_input input_lst ;
 			!value
 end
 
 let pop = ref []
-let state_size = ref 5
-let o_l = ref [1;2;3;4;5;6;7]
+let state_size = ref 3
+let o_l = ref [0;1]
 let o_v = ref [0;1]
 let popsize = ref 50
-let max_fit = ref 1000
+let max_fit = ref 4
+let num_gens = ref 10000
 
 type population = finite_automata list
 type evaluated_pop = (finite_automata*int) list
@@ -263,41 +288,57 @@ let mutate_pop (pop : population) o_l o_v : population =
 
 let eval_pop func pop : evaluated_pop =
 	let eval = map (fun p -> (p,(func p))) pop in
+	printf "Generation fitness:\n" ;
+	iter (fun (v,f) -> printf "%d," f) eval ;
+	let avg = ((fold_right (+.) (map (fun (x,y) -> (float_of_int y)) eval) 0.0) /. (float_of_int (length eval))) in
+	printf "\nAverage:%g\n" avg ; 
 	eval
 
 let tour_select (e_pop : evaluated_pop) num : population =
 	let lineup1 = map (fun x -> choose_random e_pop) (0--(num-1)) in
 	let lineup2 = map (fun x -> choose_random e_pop) (0--(num-1)) in
-	let winners = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then x_i else y_i) lineup1 lineup2 in
+	let lineup3 = map (fun x -> choose_random e_pop) (0--(num-1)) in
+	let winners1 = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then (x_i,x_f) else (y_i,y_f)) lineup1 lineup2 in
+	let winners = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then x_i else y_i) lineup3 winners1 in
 	winners
 
-let test_eval indiv =
-	(Random.int (!max_fit + 1))
+let test_eval inputs outputs indiv =
+	let test = map (fun x -> indiv#run x) inputs in
+	let right = map2 (fun x y -> if x = y then 1 else 0) test outputs in
+	let score = fold_right (+) right 0 in
+	score
 
-let rec evolve_cycle num_gens func pop  =
-	printf "Generation %d\n" num_gens ;
+let rec evolve_cycle gen func pop  =
+	printf "Generation %d\n" gen ;
 	let e_pop = eval_pop func pop in
+	debug "got here\n" ;
 	let good_enough = filter (fun (var,f) -> f = !max_fit) e_pop in
 	if not (good_enough = []) then 
 		begin
-			printf "Found one\n" ;
+			printf "Found solution\n" ;
 			pop
 		end
 	else
-		let select = tour_select e_pop 50 in
+		let select = tour_select e_pop (!popsize / 2) in
+		let newp = new_pop (!popsize / 2) !state_size !o_l !o_v in
+		let next = select @ newp in
 		let mutate = map (fun x -> 
-												let rand = Random.int 2 in 
+												let rand = Random.int 3 in 
 												if rand = 0 then begin 
 													x#mutate !o_l !o_v; x end 
 												else x) 
-											select in
-		if num_gens = 0 then 
+											next in
+		if !num_gens = gen then 
 			pop
 		else	
-			evolve_cycle (num_gens-1) func mutate  
+			evolve_cycle (gen+1) func mutate  
 
 let my = new amata 
 let pop = new_pop !popsize !state_size !o_l !o_v
+let xor = test_eval [[0;0];[0;1];[1;0];[1;1]] [0;1;1;0] 
+let even_or_odd_zeros = test_eval [[0;1];[0;1;0];[1;1;0];[0;0;0;1];[0;1;0;1];[0;0;1;1;]] [0;1;0;0;1;1]
 	
 let main =
-	evolve_cycle 100 test_eval pop ;
+	my#random_build 4 [0;1] [0;1] ;
+	max_fit := 6 ;
+	evolve_cycle 0 even_or_odd_zeros pop ;
