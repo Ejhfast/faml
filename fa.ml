@@ -9,7 +9,7 @@ type internals = {mutable name : string ; mutable contents : state_list}
 
 
 let debug_out = ref stdout
-let do_debug = ref true
+let do_debug = ref false
 let debug fmt =
   	let k result = if !do_debug then begin
 				output_string !debug_out result ;
@@ -242,13 +242,19 @@ class amata : finite_automata =
 			!value
 end
 
+let pop = ref []
+let state_size = ref 5
+let o_l = ref [1;2;3;4;5;6;7]
+let o_v = ref [0;1]
+let popsize = ref 50
+let max_fit = ref 1000
+
 type population = finite_automata list
 type evaluated_pop = (finite_automata*int) list
 
 let new_pop size state_size o_l o_v : population =
 	let pop = map (fun i -> new amata) (0--(size-1)) in
 	let init = map (fun i -> (i#random_build state_size o_l o_v) ; i) pop in
-	iter (fun p -> debug "size:%d\n" (p#num_states)) pop ;
 	init
 
 let mutate_pop (pop : population) o_l o_v : population =
@@ -266,14 +272,32 @@ let tour_select (e_pop : evaluated_pop) num : population =
 	winners
 
 let test_eval indiv =
-	0
+	(Random.int (!max_fit + 1))
+
+let rec evolve_cycle num_gens func pop  =
+	printf "Generation %d\n" num_gens ;
+	let e_pop = eval_pop func pop in
+	let good_enough = filter (fun (var,f) -> f = !max_fit) e_pop in
+	if not (good_enough = []) then 
+		begin
+			printf "Found one\n" ;
+			pop
+		end
+	else
+		let select = tour_select e_pop 50 in
+		let mutate = map (fun x -> 
+												let rand = Random.int 2 in 
+												if rand = 0 then begin 
+													x#mutate !o_l !o_v; x end 
+												else x) 
+											select in
+		if num_gens = 0 then 
+			pop
+		else	
+			evolve_cycle (num_gens-1) func mutate  
 
 let my = new amata 
+let pop = new_pop !popsize !state_size !o_l !o_v
 	
 let main =
-	let cool_list = [|(1,[|(2,3);(3,4)|])|] in
-	my#set_states cool_list ;
-	my#random_build 20 [1;2;3] [1;2;3;] ;
-	let res = my#run [1;2;3] in
-	List.iter (fun x -> my#mutate [1;2;3] [1;2;3]) (0--1000) ;
-
+	evolve_cycle 100 test_eval pop ;
