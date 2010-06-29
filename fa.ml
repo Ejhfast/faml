@@ -22,6 +22,8 @@ let (--) i j =
 		if n < i then acc else aux (n-1) (n :: acc)
 	in aux j []
 
+let sum lst = fold_right (+) lst 0 
+
 let choose_random lst = 
 	let size = length lst in
 	let choice = Random.int size in
@@ -32,6 +34,8 @@ class type finite_automata = object
 		method get_name : string
 		(* Retrieve a state *)
 		method get_state : int -> state
+		(* Get value for a given state *)
+		method get_value : int -> int
 		(* Get edges for a given state *)
 		method get_edges : int -> edge_list
 		(* Get an edge given its number within a state*)
@@ -87,6 +91,9 @@ class amata : finite_automata =
 	object(self)
 		method get_name =
 			states.name
+		method get_value num =
+			let (v,edges) = self#get_state num in
+			v
 		method set_name str = 
 			states.name <- str 
 		method set_states lst =
@@ -250,7 +257,7 @@ class amata : finite_automata =
 			let rec parse_input i =
 				(match (self#get_state !state) with
 				| (o_val, _) ->
-						value := o_val ; 
+						(*value := o_val ;*) 
 						let newstate = self#get_transition_destination !state i in
 						try 
 								let (v,_) = self#get_state newstate in 
@@ -267,7 +274,7 @@ class amata : finite_automata =
 end
 
 let pop = ref []
-let state_size = ref 3
+let state_size = ref 10
 let o_l = ref [0;1]
 let o_v = ref [0;1]
 let popsize = ref 50
@@ -294,40 +301,73 @@ let eval_pop func pop : evaluated_pop =
 	printf "\nAverage:%g\n" avg ; 
 	eval
 
-let tour_select (e_pop : evaluated_pop) num : population =
+let tour_select (e_pop : population) func num : population =
 	let lineup1 = map (fun x -> choose_random e_pop) (0--(num-1)) in
 	let lineup2 = map (fun x -> choose_random e_pop) (0--(num-1)) in
 	let lineup3 = map (fun x -> choose_random e_pop) (0--(num-1)) in
-	let winners1 = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then (x_i,x_f) else (y_i,y_f)) lineup1 lineup2 in
-	let winners = map2 (fun (x_i,x_f) (y_i,y_f) -> if x_f > y_f then x_i else y_i) lineup3 winners1 in
-	winners
+	let winners l1 l2 = map2 
+		(fun x y ->
+			(func x y)) l1 l2 in
+	let w1 = winners lineup1 lineup2 in
+	let wf = winners lineup3 w1 in
+	wf
 
-let test_eval inputs outputs indiv =
-	let test = map (fun x -> indiv#run x) inputs in
-	let right = map2 (fun x y -> if x = y then 1 else 0) test outputs in
-	let score = fold_right (+) right 0 in
-	score
+let test_eval inputs outputs indiv1 indiv2 =
+	let test i = map (fun x -> i#run x) inputs in
+	let right res = map2 (fun x y -> if x = y then 1 else 0) res outputs in
+	let res1 = test indiv1 in
+	let res2 = test indiv2 in
+	let f1 = sum (right res1) in
+	let f2 = sum (right res2) in
+	if f1 > f2 then indiv1 else indiv2
+
+let play_game games indiv1 indiv2 =
+	let p1score = ref 0 in
+	let p2score = ref 0 in
+	let turn = ref 0 in
+	let getscore pair = match pair with
+		| (0,0) -> (10,10)
+		| (0,1) -> (0,5)
+		| (1,0) -> (5,0)
+		| (1,1) -> (1,1)
+		| _ -> printf "What?\n" ; (0,0) in
+	let (playfirst,playsecond) = 
+		if (Random.int 2) = 0 then (indiv1,indiv2) else (indiv2,indiv1) in
+	turn  := playfirst#get_value 0 ;
+	for i = 1 to games do
+		let next = playsecond#run [!turn] in
+		let (p1s,p2s) = getscore (!turn,next) in
+		p1score := !p1score + p1s ;
+		p2score := !p2score + p2s ;
+		turn := playfirst#run [next] ;
+	done ;
+	printf "%d,%d\n" !p1score !p2score ;
+	if !p1score > !p2score then playfirst else playsecond
+
+let statistics (pop : population) func =
+	let eval_pop = map (fun p -> (p,(func p))) pop in
+	let avg = ((fold_right (+.) (map (fun (x,y) -> (float_of_int y)) eval_pop) 0.0) /. (float_of_int (length eval_pop))) in
+	printf "Average:%g\n" avg ; 
+	let bstlst = sort (fun (x,fx) (y,fy) -> fy - fx) eval_pop in
+	let (bst,fbst) = nth bstlst 0 in
+	printf "Best:%d\n" fbst ;
+	(bst,fbst) 
+	
 
 let rec evolve_cycle gen func pop  =
 	printf "Generation %d\n" gen ;
-	let e_pop = eval_pop func pop in
-	debug "got here\n" ;
-	let good_enough = filter (fun (var,f) -> f = !max_fit) e_pop in
-	if not (good_enough = []) then 
-		begin
-			printf "Found solution\n" ;
-			pop
-		end
-	else
-		let select = tour_select e_pop (!popsize / 2) in
-		let newp = new_pop (!popsize / 2) !state_size !o_l !o_v in
-		let next = select @ newp in
-		let mutate = map (fun x -> 
-												let rand = Random.int 3 in 
-												if rand = 0 then begin 
-													x#mutate !o_l !o_v; x end 
-												else x) 
-											next in
+	let select = tour_select pop func (!popsize / 2) in
+	let newp = new_pop (!popsize / 2) !state_size !o_l !o_v in
+	let next = select @ newp in
+	let mutate = map 
+		(fun x -> 
+			let rand = Random.int 3 in 
+			if rand = 0 then 
+			begin 
+				x#mutate !o_l !o_v; 
+				x 
+			end 
+			else x) next in
 		if !num_gens = gen then 
 			pop
 		else	
@@ -337,8 +377,8 @@ let my = new amata
 let pop = new_pop !popsize !state_size !o_l !o_v
 let xor = test_eval [[0;0];[0;1];[1;0];[1;1]] [0;1;1;0] 
 let even_or_odd_zeros = test_eval [[0;1];[0;1;0];[1;1;0];[0;0;0;1];[0;1;0;1];[0;0;1;1;]] [0;1;0;0;1;1]
-	
+
 let main =
 	my#random_build 4 [0;1] [0;1] ;
 	max_fit := 6 ;
-	evolve_cycle 0 even_or_odd_zeros pop ;
+	evolve_cycle 0 (play_game 10) pop ;
